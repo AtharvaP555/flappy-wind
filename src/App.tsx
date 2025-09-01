@@ -52,6 +52,14 @@ function App() {
   });
   const [windEnergy, setWindEnergy] = useState(100);
 
+  // 🔊 Shared AudioContext
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    audioContextRef.current = new (window.AudioContext ||
+      (window as any).webkitAudioContext)();
+  }, []);
+
   // Refs for stable access
   const isGameRunningRef = useRef(false);
   const gameOverRef = useRef(false);
@@ -129,10 +137,16 @@ function App() {
 
   // Simple audio feedback
   const playSound = useCallback(
-    (frequency: number, duration: number, type: "sine" | "square" = "sine") => {
+    (frequency: number, duration: number, type: OscillatorType = "sine") => {
       try {
-        const audioContext = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
+        const audioContext = audioContextRef.current;
+        if (!audioContext) return;
+
+        // Resume if suspended
+        if (audioContext.state === "suspended") {
+          audioContext.resume();
+        }
+
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
 
@@ -154,7 +168,7 @@ function App() {
         oscillator.start(audioContext.currentTime);
         oscillator.stop(audioContext.currentTime + duration);
       } catch (e) {
-        // Audio not supported, ignore
+        console.error("Audio error", e);
       }
     },
     []
