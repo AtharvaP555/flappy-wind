@@ -35,7 +35,7 @@ Flappy Wind is an interactive twist on the classic "Flappy Bird" game, built wit
 1. Clone the repository:
 
 ```bash
-git clone [https://github.com/AtharvaP555/flappy-wind.git](https://github.com/AtharvaP555/flappy-wind.git)
+git clone https://github.com/AtharvaP555/flappy-wind.git
 cd flappy-wind
 ```
 
