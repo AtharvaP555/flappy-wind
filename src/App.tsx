@@ -19,8 +19,8 @@ interface Pipe {
   width: number;
   gap: number;
   passed: boolean;
-  pipeColor: string; // Add color variation
-  animationOffset: number; // For pipe pop-in animation
+  pipeColor: string;
+  animationOffset: number;
 }
 
 interface Gust {
@@ -54,6 +54,14 @@ interface Cloud {
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Responsive canvas dimensions
+  const [canvasDimensions, setCanvasDimensions] = useState({
+    width: 800,
+    height: 600,
+  });
+  const [isMobile, setIsMobile] = useState(false);
+
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [score, setScore] = useState(0);
@@ -92,54 +100,107 @@ function App() {
   // Environment state
   const cloudsRef = useRef<Cloud[]>([]);
 
-  // Game constants
+  // Responsive canvas setup
+  const updateCanvasDimensions = useCallback(() => {
+    const mobile = window.innerWidth <= 768;
+    setIsMobile(mobile);
+
+    if (mobile) {
+      // Mobile: use most of the screen
+      const width = Math.min(window.innerWidth - 20, 500);
+      const height = Math.min(window.innerHeight - 200, 700);
+      setCanvasDimensions({ width, height });
+    } else {
+      // Desktop: keep original size or scale down if needed
+      const maxWidth = Math.min(window.innerWidth - 40, 800);
+      const maxHeight = Math.min(window.innerHeight - 300, 600);
+      const aspectRatio = 800 / 600;
+
+      let width = maxWidth;
+      let height = maxWidth / aspectRatio;
+
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = height * aspectRatio;
+      }
+
+      setCanvasDimensions({
+        width: Math.max(width, 400),
+        height: Math.max(height, 300),
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    updateCanvasDimensions();
+    window.addEventListener("resize", updateCanvasDimensions);
+    window.addEventListener("orientationchange", () => {
+      setTimeout(updateCanvasDimensions, 100);
+    });
+
+    return () => {
+      window.removeEventListener("resize", updateCanvasDimensions);
+      window.removeEventListener("orientationchange", updateCanvasDimensions);
+    };
+  }, [updateCanvasDimensions]);
+
+  // Dynamic game constants based on canvas size
   const GRAVITY = 800;
   const FLAP_POWER = -300;
-  const CANVAS_WIDTH = 800;
-  const CANVAS_HEIGHT = 600;
-  const PIPE_WIDTH = 60;
-  const PIPE_GAP = 150;
-  const PIPE_SPEED = 200;
+  const CANVAS_WIDTH = canvasDimensions.width;
+  const CANVAS_HEIGHT = canvasDimensions.height;
+  const PIPE_WIDTH = Math.max(40, CANVAS_WIDTH * 0.075);
+  const PIPE_GAP = Math.max(120, CANVAS_HEIGHT * 0.25);
+  const PIPE_SPEED = Math.max(150, CANVAS_WIDTH * 0.25);
 
   // Wind constants
   const MAX_WIND_ENERGY = 100;
   const WIND_REGEN_RATE = 15;
   const GUST_COST_PER_PIXEL = 0.5;
   const GUST_BASE_POWER = 1200;
-  const GUST_RADIUS = 100;
+  const GUST_RADIUS = Math.max(60, CANVAS_WIDTH * 0.125);
   const GUST_LIFE = 1.2;
 
   // Visual constants
   const PIPE_COLORS = ["#4CAF50", "#45A049", "#3E8E41", "#66BB6A"];
 
-  // Game state
+  // Game state with responsive positioning
   const birdRef = useRef<Bird>({
-    x: 100,
-    y: 300,
-    radius: 20,
+    x: CANVAS_WIDTH * 0.125,
+    y: CANVAS_HEIGHT * 0.5,
+    radius: Math.max(15, CANVAS_WIDTH * 0.025),
     color: "#FFD700",
     vy: 0,
     vx: 0,
     rotation: 0,
   });
 
+  // Update bird position when canvas size changes
+  useEffect(() => {
+    birdRef.current.x = CANVAS_WIDTH * 0.125;
+    birdRef.current.y = CANVAS_HEIGHT * 0.5;
+    birdRef.current.radius = Math.max(15, CANVAS_WIDTH * 0.025);
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
+
   const pipesRef = useRef<Pipe[]>([]);
   const gustsRef = useRef<Gust[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const nextPipeTimeRef = useRef(0);
 
-  // Initialize clouds
+  // Initialize clouds (responsive)
   useEffect(() => {
-    for (let i = 0; i < 8; i++) {
+    cloudsRef.current = [];
+    const cloudCount = Math.max(4, Math.floor(CANVAS_WIDTH / 100));
+    for (let i = 0; i < cloudCount; i++) {
       cloudsRef.current.push({
         x: Math.random() * (CANVAS_WIDTH + 200) - 200,
         y: Math.random() * CANVAS_HEIGHT * 0.4 + 50,
-        size: Math.random() * 40 + 30,
+        size: Math.random() * (CANVAS_WIDTH * 0.05) + CANVAS_WIDTH * 0.04,
         speed: Math.random() * 20 + 10,
         opacity: Math.random() * 0.3 + 0.2,
       });
     }
-  }, []);
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
 
   // Update refs when state changes
   useEffect(() => {
@@ -263,19 +324,26 @@ function App() {
   }, []);
 
   // Helper functions
-  const getCanvasMousePos = useCallback((e: MouseEvent | TouchEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+  const getCanvasMousePos = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
 
-    const rect = canvas.getBoundingClientRect();
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+      const rect = canvas.getBoundingClientRect();
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
-    return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
-    };
-  }, []);
+      // Scale coordinates to match internal canvas dimensions
+      const scaleX = CANVAS_WIDTH / rect.width;
+      const scaleY = CANVAS_HEIGHT / rect.height;
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+      };
+    },
+    [CANVAS_WIDTH, CANVAS_HEIGHT]
+  );
 
   const distance = useCallback(
     (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
@@ -291,18 +359,11 @@ function App() {
 
   // Day/night color calculation
   const getDayNightColors = useCallback((gameTime: number, score: number) => {
-    // Cycle through day/night based on time and score
     const cycleProgress = (gameTime * 0.1 + score * 0.3) % 10;
-    const dayProgress = Math.sin(cycleProgress) * 0.5 + 0.5; // 0 = night, 1 = day
+    const dayProgress = Math.sin(cycleProgress) * 0.5 + 0.5;
 
-    const skyTop = {
-      day: "#87CEEB",
-      night: "#191970",
-    };
-    const skyBottom = {
-      day: "#98D8E8",
-      night: "#4B0082",
-    };
+    const skyTop = { day: "#87CEEB", night: "#191970" };
+    const skyBottom = { day: "#98D8E8", night: "#4B0082" };
 
     const interpolateColor = (color1: string, color2: string, t: number) => {
       const r1 = parseInt(color1.slice(1, 3), 16);
@@ -358,10 +419,141 @@ function App() {
         maxLife: GUST_LIFE,
       };
     },
-    [distance, normalize, playSound, createParticles]
+    [distance, normalize, playSound, createParticles, GUST_RADIUS, GUST_LIFE]
   );
 
-  // Mouse/touch handlers
+  // Handle regular clicks/taps
+  const handleCanvasClick = useCallback(() => {
+    if (isDrawing) return;
+
+    if (gameOverRef.current) {
+      setGameOver(false);
+      setScore(0);
+      setWindEnergy(100);
+      setIsGameRunning(true);
+      birdRef.current = {
+        x: CANVAS_WIDTH * 0.125,
+        y: CANVAS_HEIGHT * 0.5,
+        radius: Math.max(15, CANVAS_WIDTH * 0.025),
+        color: "#FFD700",
+        vy: 0,
+        vx: 0,
+        rotation: 0,
+      };
+      pipesRef.current = [];
+      gustsRef.current = [];
+      particlesRef.current = [];
+      nextPipeTimeRef.current = 2;
+      gameTimeRef.current = 0;
+      playSound(440, 0.1);
+      return;
+    }
+
+    if (!isGameRunningRef.current) {
+      setIsGameRunning(true);
+      nextPipeTimeRef.current = 2;
+      playSound(330, 0.1);
+    }
+
+    if (!gameOverRef.current) {
+      birdRef.current.vy = FLAP_POWER;
+      playSound(440, 0.1);
+      createParticles(birdRef.current.x, birdRef.current.y, 3, "#FFD700");
+    }
+  }, [isDrawing, playSound, createParticles, CANVAS_WIDTH, CANVAS_HEIGHT]);
+
+  // Touch event handlers using native event listeners
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+
+      const pos = getCanvasMousePos(e);
+
+      if (!isGameRunningRef.current || gameOverRef.current) {
+        // Handle game start/restart
+        handleCanvasClick();
+        return;
+      }
+
+      // Start drawing wind gust
+      setIsDrawing(true);
+      drawStartRef.current = pos;
+      drawCurrentRef.current = pos;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+
+      if (!isDrawing || !drawStartRef.current) return;
+
+      drawCurrentRef.current = getCanvasMousePos(e);
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+
+      if (!isGameRunningRef.current) return;
+
+      if (!isDrawing || !drawStartRef.current || !drawCurrentRef.current) {
+        // This was a tap (not a drag) - handle as flap
+        if (!gameOverRef.current) {
+          birdRef.current.vy = FLAP_POWER;
+          playSound(440, 0.1);
+          createParticles(birdRef.current.x, birdRef.current.y, 3, "#FFD700");
+        }
+        return;
+      }
+
+      // This was a drag - create wind gust
+      const distance = Math.sqrt(
+        Math.pow(drawCurrentRef.current.x - drawStartRef.current.x, 2) +
+          Math.pow(drawCurrentRef.current.y - drawStartRef.current.y, 2)
+      );
+
+      if (distance > 20) {
+        // Only create gust if drag was long enough
+        const gust = createGust(drawStartRef.current, drawCurrentRef.current);
+        if (gust) {
+          gustsRef.current.push(gust);
+        }
+      } else {
+        // Short drag treated as flap
+        if (!gameOverRef.current) {
+          birdRef.current.vy = FLAP_POWER;
+          playSound(440, 0.1);
+          createParticles(birdRef.current.x, birdRef.current.y, 3, "#FFD700");
+        }
+      }
+
+      setIsDrawing(false);
+      drawStartRef.current = null;
+      drawCurrentRef.current = null;
+    };
+
+    // Add event listeners with passive: false to allow preventDefault
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [
+    getCanvasMousePos,
+    handleCanvasClick,
+    isDrawing,
+    createGust,
+    playSound,
+    createParticles,
+    FLAP_POWER,
+  ]);
+
+  // Mouse event handlers
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!isGameRunningRef.current || gameOverRef.current) return;
@@ -403,64 +595,27 @@ function App() {
     [isDrawing, createGust]
   );
 
-  // Handle regular clicks
-  const handleCanvasClick = useCallback(() => {
-    if (isDrawing) return;
+  // Create pipe with responsive sizing
+  const createPipe = useCallback(
+    (x: number): Pipe => {
+      const minTopHeight = CANVAS_HEIGHT * 0.15;
+      const maxTopHeight = CANVAS_HEIGHT - PIPE_GAP - CANVAS_HEIGHT * 0.15;
+      const topHeight =
+        Math.random() * (maxTopHeight - minTopHeight) + minTopHeight;
 
-    if (gameOverRef.current) {
-      setGameOver(false);
-      setScore(0);
-      setWindEnergy(100);
-      setIsGameRunning(true);
-      birdRef.current = {
-        x: 100,
-        y: 300,
-        radius: 20,
-        color: "#FFD700",
-        vy: 0,
-        vx: 0,
-        rotation: 0,
+      return {
+        x,
+        topHeight,
+        bottomY: topHeight + PIPE_GAP,
+        width: PIPE_WIDTH,
+        gap: PIPE_GAP,
+        passed: false,
+        pipeColor: PIPE_COLORS[Math.floor(Math.random() * PIPE_COLORS.length)],
+        animationOffset: 0,
       };
-      pipesRef.current = [];
-      gustsRef.current = [];
-      particlesRef.current = [];
-      nextPipeTimeRef.current = 2;
-      gameTimeRef.current = 0;
-      playSound(440, 0.1);
-      return;
-    }
-
-    if (!isGameRunningRef.current) {
-      setIsGameRunning(true);
-      nextPipeTimeRef.current = 2;
-      playSound(330, 0.1);
-    }
-
-    if (!gameOverRef.current) {
-      birdRef.current.vy = FLAP_POWER;
-      playSound(440, 0.1);
-      createParticles(birdRef.current.x, birdRef.current.y, 3, "#FFD700");
-    }
-  }, [isDrawing, playSound, createParticles]);
-
-  // Create pipe with enhanced visuals
-  const createPipe = useCallback((x: number): Pipe => {
-    const minTopHeight = 100;
-    const maxTopHeight = CANVAS_HEIGHT - PIPE_GAP - 100;
-    const topHeight =
-      Math.random() * (maxTopHeight - minTopHeight) + minTopHeight;
-
-    return {
-      x,
-      topHeight,
-      bottomY: topHeight + PIPE_GAP,
-      width: PIPE_WIDTH,
-      gap: PIPE_GAP,
-      passed: false,
-      pipeColor: PIPE_COLORS[Math.floor(Math.random() * PIPE_COLORS.length)],
-      animationOffset: 0, // Will be used for pop-in animation
-    };
-  }, []);
+    },
+    [CANVAS_HEIGHT, PIPE_GAP, PIPE_WIDTH]
+  );
 
   // Apply gust force to bird
   const applyGustForce = useCallback(
@@ -469,7 +624,6 @@ function App() {
       if (dist < gust.radius) {
         const influence = 1 - (dist / gust.radius) ** 2;
         const force = gust.magnitude * influence;
-
         bird.vx += gust.direction.x * force * deltaTime;
         bird.vy += gust.direction.y * force * deltaTime;
       }
@@ -512,18 +666,29 @@ function App() {
         createParticles(bird.x, bird.y, 10, "#FF0000");
       }
     },
-    [applyGustForce, playSound, addScreenShake, createParticles]
+    [
+      GRAVITY,
+      CANVAS_WIDTH,
+      CANVAS_HEIGHT,
+      applyGustForce,
+      playSound,
+      addScreenShake,
+      createParticles,
+    ]
   );
 
-  const updateClouds = useCallback((deltaTime: number) => {
-    cloudsRef.current.forEach((cloud) => {
-      cloud.x -= cloud.speed * deltaTime;
-      if (cloud.x < -cloud.size - 50) {
-        cloud.x = CANVAS_WIDTH + cloud.size;
-        cloud.y = Math.random() * CANVAS_HEIGHT * 0.4 + 50;
-      }
-    });
-  }, []);
+  const updateClouds = useCallback(
+    (deltaTime: number) => {
+      cloudsRef.current.forEach((cloud) => {
+        cloud.x -= cloud.speed * deltaTime;
+        if (cloud.x < -cloud.size - 50) {
+          cloud.x = CANVAS_WIDTH + cloud.size;
+          cloud.y = Math.random() * CANVAS_HEIGHT * 0.4 + 50;
+        }
+      });
+    },
+    [CANVAS_WIDTH, CANVAS_HEIGHT]
+  );
 
   const updatePipes = useCallback(
     (deltaTime: number) => {
@@ -532,7 +697,6 @@ function App() {
       pipesRef.current.forEach((pipe) => {
         pipe.x -= PIPE_SPEED * deltaTime;
 
-        // Animate pipe pop-in
         if (pipe.animationOffset < 1) {
           pipe.animationOffset += deltaTime * 3;
         }
@@ -570,7 +734,14 @@ function App() {
         }
       }
     },
-    [createPipe, playSound, addScreenShake, createParticles]
+    [
+      PIPE_SPEED,
+      CANVAS_WIDTH,
+      createPipe,
+      playSound,
+      addScreenShake,
+      createParticles,
+    ]
   );
 
   const updateParticles = useCallback((deltaTime: number) => {
@@ -604,7 +775,6 @@ function App() {
     }
   }, []);
 
-  // Collision detection
   const checkCollision = useCallback((bird: Bird, pipe: Pipe): boolean => {
     const birdLeft = bird.x - bird.radius;
     const birdRight = bird.x + bird.radius;
@@ -627,7 +797,6 @@ function App() {
     (ctx: CanvasRenderingContext2D) => {
       const colors = getDayNightColors(gameTimeRef.current, scoreRef.current);
 
-      // Gradient sky
       const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
       gradient.addColorStop(0, colors.skyTop);
       gradient.addColorStop(1, colors.skyBottom);
@@ -635,13 +804,11 @@ function App() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Draw clouds
       cloudsRef.current.forEach((cloud) => {
         ctx.save();
         ctx.globalAlpha = cloud.opacity * colors.cloudOpacity;
         ctx.fillStyle = "#FFFFFF";
 
-        // Draw fluffy cloud shape
         ctx.beginPath();
         ctx.arc(cloud.x, cloud.y, cloud.size * 0.5, 0, Math.PI * 2);
         ctx.arc(
@@ -677,7 +844,7 @@ function App() {
         ctx.restore();
       });
     },
-    [getDayNightColors]
+    [getDayNightColors, CANVAS_WIDTH, CANVAS_HEIGHT]
   );
 
   const drawBird = useCallback((ctx: CanvasRenderingContext2D, bird: Bird) => {
@@ -705,28 +872,42 @@ function App() {
     ctx.fillStyle = birdGradient;
     ctx.fill();
     ctx.strokeStyle = "#FFA500";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = Math.max(2, bird.radius * 0.15);
     ctx.stroke();
 
-    // Eye with highlight
+    // Responsive eye
+    const eyeSize = Math.max(2, bird.radius * 0.2);
     ctx.beginPath();
-    ctx.arc(5, -5, 4, 0, Math.PI * 2);
+    ctx.arc(bird.radius * 0.25, -bird.radius * 0.25, eyeSize, 0, Math.PI * 2);
     ctx.fillStyle = "white";
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(5, -5, 2.5, 0, Math.PI * 2);
+    ctx.arc(
+      bird.radius * 0.25,
+      -bird.radius * 0.25,
+      eyeSize * 0.6,
+      0,
+      Math.PI * 2
+    );
     ctx.fillStyle = "black";
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(6, -6, 1, 0, Math.PI * 2);
+    ctx.arc(
+      bird.radius * 0.3,
+      -bird.radius * 0.3,
+      eyeSize * 0.25,
+      0,
+      Math.PI * 2
+    );
     ctx.fillStyle = "white";
     ctx.fill();
 
     // Enhanced beak
+    const beakSize = bird.radius * 0.4;
     ctx.beginPath();
     ctx.moveTo(bird.radius - 5, 0);
-    ctx.lineTo(bird.radius + 8, -4);
-    ctx.lineTo(bird.radius + 8, 4);
+    ctx.lineTo(bird.radius + beakSize, -beakSize * 0.5);
+    ctx.lineTo(bird.radius + beakSize, beakSize * 0.5);
     ctx.closePath();
     ctx.fillStyle = "#FF8C00";
     ctx.fill();
@@ -737,83 +918,91 @@ function App() {
     ctx.restore();
   }, []);
 
-  const drawPipe = useCallback((ctx: CanvasRenderingContext2D, pipe: Pipe) => {
-    // Animate pipe entrance
-    const animScale = Math.min(pipe.animationOffset, 1);
-    const easeOut = 1 - Math.pow(1 - animScale, 3);
-    const currentWidth = pipe.width * easeOut;
-    const offsetX = (pipe.width - currentWidth) / 2;
+  const drawPipe = useCallback(
+    (ctx: CanvasRenderingContext2D, pipe: Pipe) => {
+      const animScale = Math.min(pipe.animationOffset, 1);
+      const easeOut = 1 - Math.pow(1 - animScale, 3);
+      const currentWidth = pipe.width * easeOut;
+      const offsetX = (pipe.width - currentWidth) / 2;
 
-    // Pipe shadows
-    ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
-    ctx.fillRect(pipe.x + offsetX + 3, 3, currentWidth, pipe.topHeight);
-    ctx.fillRect(
-      pipe.x + offsetX + 3,
-      pipe.bottomY + 3,
-      currentWidth,
-      CANVAS_HEIGHT - pipe.bottomY
-    );
+      // Pipe shadows
+      ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+      ctx.fillRect(pipe.x + offsetX + 3, 3, currentWidth, pipe.topHeight);
+      ctx.fillRect(
+        pipe.x + offsetX + 3,
+        pipe.bottomY + 3,
+        currentWidth,
+        CANVAS_HEIGHT - pipe.bottomY
+      );
 
-    // Main pipe gradient
-    const pipeGradient = ctx.createLinearGradient(
-      pipe.x + offsetX,
-      0,
-      pipe.x + offsetX + currentWidth,
-      0
-    );
-    pipeGradient.addColorStop(0, pipe.pipeColor);
-    pipeGradient.addColorStop(0.3, "#5CBF60");
-    pipeGradient.addColorStop(0.7, pipe.pipeColor);
-    pipeGradient.addColorStop(1, "#2E7D32");
+      // Main pipe gradient
+      const pipeGradient = ctx.createLinearGradient(
+        pipe.x + offsetX,
+        0,
+        pipe.x + offsetX + currentWidth,
+        0
+      );
+      pipeGradient.addColorStop(0, pipe.pipeColor);
+      pipeGradient.addColorStop(0.3, "#5CBF60");
+      pipeGradient.addColorStop(0.7, pipe.pipeColor);
+      pipeGradient.addColorStop(1, "#2E7D32");
 
-    // Top pipe
-    ctx.fillStyle = pipeGradient;
-    ctx.fillRect(pipe.x + offsetX, 0, currentWidth, pipe.topHeight);
+      ctx.fillStyle = pipeGradient;
+      ctx.fillRect(pipe.x + offsetX, 0, currentWidth, pipe.topHeight);
+      ctx.fillRect(
+        pipe.x + offsetX,
+        pipe.bottomY,
+        currentWidth,
+        CANVAS_HEIGHT - pipe.bottomY
+      );
 
-    // Bottom pipe
-    ctx.fillRect(
-      pipe.x + offsetX,
-      pipe.bottomY,
-      currentWidth,
-      CANVAS_HEIGHT - pipe.bottomY
-    );
+      // 3D highlights
+      ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.fillRect(
+        pipe.x + offsetX,
+        0,
+        Math.max(4, currentWidth * 0.15),
+        pipe.topHeight
+      );
+      ctx.fillRect(
+        pipe.x + offsetX,
+        pipe.bottomY,
+        Math.max(4, currentWidth * 0.15),
+        CANVAS_HEIGHT - pipe.bottomY
+      );
 
-    // Pipe highlights and shadows for 3D effect
-    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.fillRect(pipe.x + offsetX, 0, 8, pipe.topHeight);
-    ctx.fillRect(
-      pipe.x + offsetX,
-      pipe.bottomY,
-      8,
-      CANVAS_HEIGHT - pipe.bottomY
-    );
+      ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+      ctx.fillRect(
+        pipe.x + offsetX + currentWidth - Math.max(4, currentWidth * 0.15),
+        0,
+        Math.max(4, currentWidth * 0.15),
+        pipe.topHeight
+      );
+      ctx.fillRect(
+        pipe.x + offsetX + currentWidth - Math.max(4, currentWidth * 0.15),
+        pipe.bottomY,
+        Math.max(4, currentWidth * 0.15),
+        CANVAS_HEIGHT - pipe.bottomY
+      );
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
-    ctx.fillRect(pipe.x + offsetX + currentWidth - 8, 0, 8, pipe.topHeight);
-    ctx.fillRect(
-      pipe.x + offsetX + currentWidth - 8,
-      pipe.bottomY,
-      8,
-      CANVAS_HEIGHT - pipe.bottomY
-    );
-
-    // Pipe borders
-    ctx.strokeStyle = "#1B5E20";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pipe.x + offsetX, 0, currentWidth, pipe.topHeight);
-    ctx.strokeRect(
-      pipe.x + offsetX,
-      pipe.bottomY,
-      currentWidth,
-      CANVAS_HEIGHT - pipe.bottomY
-    );
-  }, []);
+      // Borders
+      ctx.strokeStyle = "#1B5E20";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x + offsetX, 0, currentWidth, pipe.topHeight);
+      ctx.strokeRect(
+        pipe.x + offsetX,
+        pipe.bottomY,
+        currentWidth,
+        CANVAS_HEIGHT - pipe.bottomY
+      );
+    },
+    [CANVAS_HEIGHT]
+  );
 
   const drawGust = useCallback((ctx: CanvasRenderingContext2D, gust: Gust) => {
     const alpha = gust.life / gust.maxLife;
     const pulseRadius = gust.radius * (1 + Math.sin(Date.now() * 0.01) * 0.1);
 
-    // Gust circle with animated rings
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.arc(gust.x, gust.y, pulseRadius - i * 15, 0, Math.PI * 2);
@@ -822,24 +1011,18 @@ function App() {
       ctx.stroke();
     }
 
-    // Enhanced direction arrow
-    const arrowLength = 45;
+    const arrowLength = Math.max(30, gust.radius * 0.5);
     const endX = gust.x + gust.direction.x * arrowLength;
     const endY = gust.y + gust.direction.y * arrowLength;
-
-    const arrowGradient = ctx.createLinearGradient(gust.x, gust.y, endX, endY);
-    arrowGradient.addColorStop(0, `rgba(0, 200, 255, ${alpha * 0.8})`);
-    arrowGradient.addColorStop(1, `rgba(0, 150, 255, ${alpha})`);
 
     ctx.beginPath();
     ctx.moveTo(gust.x, gust.y);
     ctx.lineTo(endX, endY);
-    ctx.strokeStyle = arrowGradient;
-    ctx.lineWidth = 5;
+    ctx.strokeStyle = `rgba(0, 200, 255, ${alpha})`;
+    ctx.lineWidth = Math.max(3, gust.radius * 0.06);
     ctx.stroke();
 
-    // Enhanced arrow head
-    const headLength = 15;
+    const headLength = Math.max(10, arrowLength * 0.3);
     const angle = Math.atan2(gust.direction.y, gust.direction.x);
 
     ctx.beginPath();
@@ -867,7 +1050,6 @@ function App() {
       ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
       ctx.fill();
 
-      // Particle glow effect
       ctx.globalAlpha = alpha * 0.3;
       ctx.beginPath();
       ctx.arc(particle.x, particle.y, particle.size * 2, 0, Math.PI * 2);
@@ -881,9 +1063,9 @@ function App() {
       if (!isDrawing || !drawStartRef.current || !drawCurrentRef.current)
         return;
 
-      const pulseWidth = 4 + Math.sin(Date.now() * 0.015) * 1.5;
+      const pulseWidth =
+        Math.max(2, CANVAS_WIDTH * 0.006) + Math.sin(Date.now() * 0.015) * 1.5;
 
-      // Stroke with glow
       ctx.save();
       ctx.shadowColor = "rgba(0, 200, 255, 0.8)";
       ctx.shadowBlur = 15;
@@ -897,7 +1079,6 @@ function App() {
 
       ctx.restore();
 
-      // Preview circle with animation
       const pulseRadius =
         GUST_RADIUS * (1 + Math.sin(Date.now() * 0.02) * 0.15);
       ctx.beginPath();
@@ -912,159 +1093,179 @@ function App() {
       ctx.lineWidth = 3;
       ctx.stroke();
     },
-    [isDrawing]
+    [isDrawing, GUST_RADIUS, CANVAS_WIDTH]
   );
 
-  // Enhanced UI with arcade styling
-  const drawUI = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Pixel-style score
-    ctx.save();
-    ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 4;
-    ctx.shadowOffsetY = 4;
+  // Responsive UI drawing
+  const drawUI = useCallback(
+    (ctx: CanvasRenderingContext2D) => {
+      const fontSize = Math.max(16, CANVAS_WIDTH * 0.045);
+      const smallFontSize = Math.max(12, CANVAS_WIDTH * 0.025);
 
-    ctx.fillStyle = "white";
-    ctx.font = "bold 36px 'Courier New', monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(
-      `SCORE: ${scoreRef.current.toString().padStart(3, "0")}`,
-      CANVAS_WIDTH / 2,
-      60
-    );
-
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    ctx.restore();
-
-    // Best score with retro styling
-    if (bestScoreRef.current > 0) {
-      ctx.fillStyle = "rgba(255, 215, 0, 0.9)";
-      ctx.font = "bold 18px 'Courier New', monospace";
-      ctx.fillText(
-        `BEST: ${bestScoreRef.current.toString().padStart(3, "0")}`,
-        CANVAS_WIDTH / 2,
-        85
-      );
-    }
-
-    // Enhanced Wind Energy Bar
-    const barWidth = 220;
-    const barHeight = 24;
-    const barX = CANVAS_WIDTH - barWidth - 30;
-    const barY = 50; // Moved down to make room for label above
-    const energyPercent = windEnergyRef.current / MAX_WIND_ENERGY;
-
-    // Energy label above the bar
-    ctx.fillStyle = "white";
-    ctx.font = "bold 14px 'Courier New', monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("WIND ENERGY", barX + barWidth / 2, barY - 8);
-
-    // Bar background with border
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-    ctx.fillRect(barX - 4, barY - 4, barWidth + 8, barHeight + 8);
-
-    ctx.fillStyle = "rgba(40, 40, 40, 0.9)";
-    ctx.fillRect(barX, barY, barWidth, barHeight);
-
-    // Animated energy fill with gradient
-    const fillWidth = barWidth * energyPercent;
-    const energyGradient = ctx.createLinearGradient(
-      barX,
-      barY,
-      barX + fillWidth,
-      barY
-    );
-
-    if (energyPercent > 0.6) {
-      energyGradient.addColorStop(0, "#4CAF50");
-      energyGradient.addColorStop(1, "#8BC34A");
-    } else if (energyPercent > 0.3) {
-      energyGradient.addColorStop(0, "#FF9800");
-      energyGradient.addColorStop(1, "#FFC107");
-    } else {
-      energyGradient.addColorStop(0, "#F44336");
-      energyGradient.addColorStop(1, "#FF5722");
-    }
-
-    ctx.fillStyle = energyGradient;
-    ctx.fillRect(barX, barY, fillWidth, barHeight);
-
-    // Energy bar segments
-    const segments = 10;
-    const segmentWidth = barWidth / segments;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
-    ctx.lineWidth = 1;
-    for (let i = 1; i < segments; i++) {
-      const segmentX = barX + i * segmentWidth;
-      ctx.beginPath();
-      ctx.moveTo(segmentX, barY);
-      ctx.lineTo(segmentX, barY + barHeight);
-      ctx.stroke();
-    }
-
-    // Bar border with glow
-    ctx.save();
-    ctx.shadowColor = energyPercent > 0.5 ? "#4CAF50" : "#F44336";
-    ctx.shadowBlur = 8;
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
-    ctx.restore();
-
-    // Energy percentage inside the bar
-    ctx.textAlign = "center";
-    ctx.fillStyle = "white";
-    ctx.font = "bold 12px 'Courier New', monospace";
-    ctx.fillText(
-      `${Math.round(energyPercent * 100)}%`,
-      barX + barWidth / 2,
-      barY + 17
-    );
-
-    // Instructions with retro styling
-    if (!isGameRunningRef.current && !gameOverRef.current) {
+      // Score - responsive positioning and sizing
       ctx.save();
       ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-      ctx.shadowOffsetX = 2;
-      ctx.shadowOffsetY = 2;
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = Math.max(2, CANVAS_WIDTH * 0.005);
+      ctx.shadowOffsetY = Math.max(2, CANVAS_WIDTH * 0.005);
 
-      ctx.fillStyle = "#FFD700";
-      ctx.font = "bold 28px 'Courier New', monospace";
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
       ctx.textAlign = "center";
-      ctx.fillText("CLICK TO FLAP", CANVAS_WIDTH / 2, 200);
+      ctx.fillText(
+        `SCORE: ${scoreRef.current.toString().padStart(3, "0")}`,
+        CANVAS_WIDTH / 2,
+        fontSize + 10
+      );
 
-      ctx.fillStyle = "#00BFFF";
-      ctx.font = "bold 24px 'Courier New', monospace";
-      ctx.fillText("DRAG TO CREATE WIND", CANVAS_WIDTH / 2, 235);
-
-      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-      ctx.font = "18px 'Courier New', monospace";
-      ctx.fillText("MANAGE YOUR ENERGY WISELY!", CANVAS_WIDTH / 2, 265);
-
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
       ctx.restore();
-    }
-  }, []);
 
-  // Game Over card overlay
+      // Best score
+      if (bestScoreRef.current > 0) {
+        ctx.fillStyle = "rgba(255, 215, 0, 0.9)";
+        ctx.font = `bold ${smallFontSize}px 'Courier New', monospace`;
+        ctx.fillText(
+          `BEST: ${bestScoreRef.current.toString().padStart(3, "0")}`,
+          CANVAS_WIDTH / 2,
+          fontSize + 30
+        );
+      }
+
+      // Responsive Wind Energy Bar
+      const barWidth = Math.min(220, CANVAS_WIDTH * 0.35);
+      const barHeight = Math.max(16, CANVAS_HEIGHT * 0.035);
+      const barX = CANVAS_WIDTH - barWidth - CANVAS_WIDTH * 0.05;
+      const barY = CANVAS_HEIGHT * 0.08;
+      const energyPercent = windEnergyRef.current / MAX_WIND_ENERGY;
+
+      // Energy label above the bar
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${Math.max(
+        10,
+        CANVAS_WIDTH * 0.02
+      )}px 'Courier New', monospace`;
+      ctx.textAlign = "center";
+      ctx.fillText("WIND ENERGY", barX + barWidth / 2, barY - 8);
+
+      // Bar background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(barX - 4, barY - 4, barWidth + 8, barHeight + 8);
+
+      ctx.fillStyle = "rgba(40, 40, 40, 0.9)";
+      ctx.fillRect(barX, barY, barWidth, barHeight);
+
+      // Energy fill
+      const fillWidth = barWidth * energyPercent;
+      const energyGradient = ctx.createLinearGradient(
+        barX,
+        barY,
+        barX + fillWidth,
+        barY
+      );
+
+      if (energyPercent > 0.6) {
+        energyGradient.addColorStop(0, "#4CAF50");
+        energyGradient.addColorStop(1, "#8BC34A");
+      } else if (energyPercent > 0.3) {
+        energyGradient.addColorStop(0, "#FF9800");
+        energyGradient.addColorStop(1, "#FFC107");
+      } else {
+        energyGradient.addColorStop(0, "#F44336");
+        energyGradient.addColorStop(1, "#FF5722");
+      }
+
+      ctx.fillStyle = energyGradient;
+      ctx.fillRect(barX, barY, fillWidth, barHeight);
+
+      // Bar border
+      ctx.save();
+      ctx.shadowColor = energyPercent > 0.5 ? "#4CAF50" : "#F44336";
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(barX, barY, barWidth, barHeight);
+      ctx.restore();
+
+      // Energy percentage
+      ctx.textAlign = "center";
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${Math.max(
+        8,
+        CANVAS_WIDTH * 0.015
+      )}px 'Courier New', monospace`;
+      ctx.fillText(
+        `${Math.round(energyPercent * 100)}%`,
+        barX + barWidth / 2,
+        barY + barHeight - 4
+      );
+
+      // Responsive instructions
+      if (!isGameRunningRef.current && !gameOverRef.current) {
+        const instructionY = CANVAS_HEIGHT * 0.4;
+
+        ctx.save();
+        ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+
+        ctx.fillStyle = "#FFD700";
+        ctx.font = `bold ${Math.max(
+          18,
+          CANVAS_WIDTH * 0.035
+        )}px 'Courier New', monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText(
+          isMobile ? "TAP TO FLAP" : "CLICK TO FLAP",
+          CANVAS_WIDTH / 2,
+          instructionY
+        );
+
+        ctx.fillStyle = "#00BFFF";
+        ctx.font = `bold ${Math.max(
+          16,
+          CANVAS_WIDTH * 0.03
+        )}px 'Courier New', monospace`;
+        ctx.fillText(
+          isMobile ? "DRAG TO CREATE WIND" : "DRAG TO CREATE WIND",
+          CANVAS_WIDTH / 2,
+          instructionY + 35
+        );
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.font = `${Math.max(
+          12,
+          CANVAS_WIDTH * 0.025
+        )}px 'Courier New', monospace`;
+        ctx.fillText(
+          "MANAGE YOUR ENERGY WISELY!",
+          CANVAS_WIDTH / 2,
+          instructionY + 65
+        );
+
+        ctx.restore();
+      }
+    },
+    [CANVAS_WIDTH, CANVAS_HEIGHT, isMobile]
+  );
+
+  // Game Over card (responsive)
   const drawGameOverCard = useCallback(
     (ctx: CanvasRenderingContext2D) => {
       if (!gameOverRef.current) return;
 
-      const cardWidth = 400;
-      const cardHeight = 300;
+      const cardWidth = Math.min(400, CANVAS_WIDTH * 0.8);
+      const cardHeight = Math.min(300, CANVAS_HEIGHT * 0.6);
       const cardX = (CANVAS_WIDTH - cardWidth) / 2;
       const cardY = (CANVAS_HEIGHT - cardHeight) / 2;
 
       ctx.save();
       ctx.globalAlpha = gameOverOpacity;
 
-      // Card shadow
       ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
       ctx.fillRect(cardX + 8, cardY + 8, cardWidth, cardHeight);
 
-      // Card background with gradient
       const cardGradient = ctx.createLinearGradient(
         cardX,
         cardY,
@@ -1077,7 +1278,6 @@ function App() {
       ctx.fillStyle = cardGradient;
       ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
 
-      // Card border with red glow
       ctx.save();
       ctx.shadowColor = "#FF0000";
       ctx.shadowBlur = 15;
@@ -1086,64 +1286,66 @@ function App() {
       ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
       ctx.restore();
 
-      // Game Over title
+      const titleFontSize = Math.max(24, cardWidth * 0.08);
+      const textFontSize = Math.max(16, cardWidth * 0.05);
+
       ctx.fillStyle = "#FF4444";
-      ctx.font = "bold 48px 'Courier New', monospace";
+      ctx.font = `bold ${titleFontSize}px 'Courier New', monospace`;
       ctx.textAlign = "center";
       ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
       ctx.shadowOffsetX = 3;
       ctx.shadowOffsetY = 3;
-      ctx.fillText("GAME OVER", CANVAS_WIDTH / 2, cardY + 80);
+      ctx.fillText("GAME OVER", CANVAS_WIDTH / 2, cardY + titleFontSize + 20);
 
-      // Final score
       ctx.fillStyle = "white";
-      ctx.font = "bold 24px 'Courier New', monospace";
+      ctx.font = `bold ${textFontSize}px 'Courier New', monospace`;
       ctx.fillText(
         `FINAL SCORE: ${scoreRef.current}`,
         CANVAS_WIDTH / 2,
-        cardY + 130
+        cardY + titleFontSize + 60
       );
 
-      // Best score indicator
       if (bestScoreRef.current > 0) {
         ctx.fillStyle =
           scoreRef.current === bestScoreRef.current
             ? "#FFD700"
             : "rgba(255, 255, 255, 0.7)";
-        ctx.font = "20px 'Courier New', monospace";
+        ctx.font = `${textFontSize * 0.8}px 'Courier New', monospace`;
         ctx.fillText(
           `BEST: ${bestScoreRef.current}`,
           CANVAS_WIDTH / 2,
-          cardY + 160
+          cardY + titleFontSize + 90
         );
       }
 
-      // New best score celebration
       if (scoreRef.current === bestScoreRef.current && scoreRef.current > 0) {
         const pulseScale = 1 + Math.sin(Date.now() * 0.01) * 0.1;
         ctx.save();
         ctx.scale(pulseScale, pulseScale);
         ctx.fillStyle = "#FFD700";
-        ctx.font = "bold 20px 'Courier New', monospace";
+        ctx.font = `bold ${textFontSize * 0.7}px 'Courier New', monospace`;
         ctx.fillText(
           "NEW BEST SCORE!",
           CANVAS_WIDTH / 2 / pulseScale,
-          (cardY + 190) / pulseScale
+          (cardY + titleFontSize + 120) / pulseScale
         );
         ctx.restore();
       }
 
-      // Restart instruction with pulsing effect
       const pulseAlpha = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
       ctx.fillStyle = `rgba(0, 255, 0, ${pulseAlpha})`;
-      ctx.font = "bold 22px 'Courier New', monospace";
-      ctx.fillText("CLICK TO RESTART", CANVAS_WIDTH / 2, cardY + 240);
+      ctx.font = `bold ${textFontSize * 0.9}px 'Courier New', monospace`;
+      ctx.fillText(
+        isMobile ? "TAP TO RESTART" : "CLICK TO RESTART",
+        CANVAS_WIDTH / 2,
+        cardY + cardHeight - 30
+      );
 
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
       ctx.restore();
     },
-    [gameOverOpacity]
+    [gameOverOpacity, CANVAS_WIDTH, CANVAS_HEIGHT, isMobile]
   );
 
   const render = useCallback(() => {
@@ -1153,14 +1355,10 @@ function App() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Apply screen shake
     ctx.save();
     ctx.translate(shakeRef.current.x, shakeRef.current.y);
 
-    // Clear and draw background
     drawBackground(ctx);
-
-    // Draw game objects
     pipesRef.current.forEach((pipe) => drawPipe(ctx, pipe));
     gustsRef.current.forEach((gust) => drawGust(ctx, gust));
     drawParticles(ctx);
@@ -1169,7 +1367,6 @@ function App() {
 
     ctx.restore();
 
-    // Draw UI (not affected by screen shake)
     drawUI(ctx);
     drawGameOverCard(ctx);
   }, [
@@ -1183,7 +1380,6 @@ function App() {
     drawGameOverCard,
   ]);
 
-  // Game loop
   const gameLoop = useCallback(
     (currentTime: number) => {
       const deltaTime = lastTimeRef.current
@@ -1221,7 +1417,6 @@ function App() {
     ]
   );
 
-  // Start game loop
   useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(gameLoop);
 
@@ -1233,102 +1428,121 @@ function App() {
   }, [gameLoop]);
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: isMobile ? "10px" : "20px",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      }}
+    >
       <h1
         style={{
           background: "linear-gradient(45deg, #FFD700, #FF6B35)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
-          fontSize: "3em",
+          fontSize: isMobile ? "2em" : "3em",
           textShadow: "2px 2px 4px rgba(0,0,0,0.3)",
-          marginBottom: "20px",
+          marginBottom: isMobile ? "10px" : "20px",
+          textAlign: "center",
         }}
       >
         🌪️ FLAPPY WIND
       </h1>
+
       <canvas
         ref={canvasRef}
-        width={800}
-        height={600}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
         style={{
           border: "4px solid #333",
-          background: "linear-gradient(to bottom, #87CEEB, #98D8E8)",
           cursor: "crosshair",
           borderRadius: "15px",
           boxShadow:
             "0 8px 32px rgba(0,0,0,0.4), inset 0 2px 4px rgba(255,255,255,0.1)",
-          transition: "transform 0.2s ease",
+          maxWidth: "100%",
+          maxHeight: "70vh",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onClick={handleCanvasClick}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.02)")}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
       >
         Your browser doesn't support HTML5 Canvas
       </canvas>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: "30px",
-          marginTop: "20px",
-          fontSize: "20px",
-          fontWeight: "bold",
-          fontFamily: "'Courier New', monospace",
-        }}
-      >
+
+      {!isMobile && (
         <div
           style={{
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            padding: "10px 20px",
-            borderRadius: "25px",
-            color: "white",
-            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            display: "flex",
+            justifyContent: "center",
+            gap: "30px",
+            marginTop: "20px",
+            fontSize: "20px",
+            fontWeight: "bold",
+            fontFamily: "'Courier New', monospace",
+            flexWrap: "wrap",
           }}
         >
-          🎯 SCORE: {score.toString().padStart(3, "0")}
+          <div
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              padding: "10px 20px",
+              borderRadius: "25px",
+              color: "white",
+              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            }}
+          >
+            🎯 SCORE: {score.toString().padStart(3, "0")}
+          </div>
+          <div
+            style={{
+              background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+              padding: "10px 20px",
+              borderRadius: "25px",
+              color: "white",
+              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            }}
+          >
+            🏆 BEST: {bestScore.toString().padStart(3, "0")}
+          </div>
+          <div
+            style={{
+              background: `linear-gradient(135deg, ${
+                windEnergy > 50
+                  ? "#4facfe 0%, #00f2fe 100%"
+                  : "#fa709a 0%, #fee140 100%"
+              })`,
+              padding: "10px 20px",
+              borderRadius: "25px",
+              color: "white",
+              boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            }}
+          >
+            🌪️ WIND: {Math.round(windEnergy)}%
+          </div>
         </div>
-        <div
-          style={{
-            background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
-            padding: "10px 20px",
-            borderRadius: "25px",
-            color: "white",
-            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-          }}
-        >
-          🏆 BEST: {bestScore.toString().padStart(3, "0")}
-        </div>
-        <div
-          style={{
-            background: `linear-gradient(135deg, ${
-              windEnergy > 50
-                ? "#4facfe 0%, #00f2fe 100%"
-                : "#fa709a 0%, #fee140 100%"
-            })`,
-            padding: "10px 20px",
-            borderRadius: "25px",
-            color: "white",
-            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-          }}
-        >
-          🌪️ WIND: {Math.round(windEnergy)}%
-        </div>
-      </div>
+      )}
+
       <p
         style={{
           textAlign: "center",
           margin: "20px 0",
-          fontSize: "18px",
-          color: "#333",
+          fontSize: isMobile ? "14px" : "18px",
+          color: "white",
           fontFamily: "'Courier New', monospace",
           fontWeight: "bold",
-          textShadow: "1px 1px 2px rgba(0,0,0,0.1)",
+          textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
+          maxWidth: "600px",
         }}
       >
-        CLICK TO FLAP • DRAG TO CREATE WIND GUSTS • MANAGE YOUR ENERGY WISELY!
+        {isMobile
+          ? "TAP TO FLAP • DRAG TO CREATE WIND GUSTS"
+          : "CLICK TO FLAP • DRAG TO CREATE WIND GUSTS • MANAGE YOUR ENERGY WISELY!"}
       </p>
     </div>
   );
